@@ -1,12 +1,94 @@
-# fry up access to BetaBrite on serial port
+#!/usr/bin/env python
+#
+#       alphasign.py
+#       
+#       Copyright 2008 anescient <anescient@bolysk>
+#       
+#       This program is free software; you can redistribute it and/or modify
+#       it under the terms of the GNU General Public License as published by
+#       the Free Software Foundation; either version 2 of the License, or
+#       (at your option) any later version.
+#       
+#       This program is distributed in the hope that it will be useful,
+#       but WITHOUT ANY WARRANTY; without even the implied warranty of
+#       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#       GNU General Public License for more details.
+#       
+#       You should have received a copy of the GNU General Public License
+#       along with this program; if not, write to the Free Software
+#       Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+#       MA 02110-1301, USA.
 
 import serial
 import time
 
+
+class AlphaMemSetup:
+	"configuration for alpha sign memory"
+	
+	FIRSTLABEL = 0x40
+	
+	currentlabel = FIRSTLABEL
+	configlist = list() # list of tuples ( type, label, size )
+	
+	TYPE_TEXT = "\x41"
+	TYPE_STRING = "\x42"
+	TYPE_SMALLDOTS = "\x43"
+	
+	
+	def clear ( self ):
+		self.currentlabel = FIRSTLABEL
+		return
+	
+	
+	def pushTextFile ( self, size = 100 ):
+		"add a text file to the configuration, return the file label"
+		if size < 1:
+			return ''
+		label = self.getNextLabel()
+		if not label:
+			return ''
+		entry = ( self.TYPE_TEXT, label, "%04X" % size )
+		self.configlist.append( entry )
+		return label
+	
+	
+	def pushStringFile ( self, size = 125 ):
+		"add a string file to the configuration, return the file label"
+		if size < 1:
+			return ''
+		label = self.getNextLabel()
+		if not label:
+			return ''
+		entry = ( self.TYPE_STRING, label, "%04X" % size )
+		self.configlist.append( entry )
+		return label
+
+	
+	def pushSmallDotsFile ( self, size = ( 1, 1 ) ):
+		"add a small dots file to the configuration, return the file label"
+		if len( size ) != 2:
+			return ''
+		if size[0] < 1 or size[1] < 1 or size[0] > 255 or size[1] > 31:
+			return ''
+		return
+	
+	
+	def getNextLabel ( self ):
+		"get next available file label"
+		if self.currentlabel > 0x7e:
+			return ''
+		label = chr( self.currentlabel )
+		self.currentlabel = self.currentlabel + 1
+		return label
+
+
+###########################################################
+
 class AlphaSign:
   "interface to BetaBrite model 1036 on serial port"
 
-  PORTNUM = "/dev/ttyUSB0" # 0 = COM1
+  PORTNUM  = 0 # 0 = COM1, or file name
   PORTBAUD = 9600
 
   # various constants for Alpha protocol
@@ -18,79 +100,87 @@ class AlphaSign:
   ALPHA_EOT = "\x04" # end of transmission
   ALPHA_ESC = "\x1b" # escape
 
-
+  comport = 0 # serial.Serial( PORTNUM, PORTBAUD )
+  
+  def __init__ ( self, comport = 0 ):
+  	self.PORTNUM = comport
+  	self.comport = serial.Serial( self.PORTNUM, self.PORTBAUD )
+  	return
+  
+  
   def sendRaw ( self, data = "" ):
     "send raw data to the sign"
     if len(data) > 0:
-      comport = serial.Serial( self.PORTNUM, self.PORTBAUD )
-      comport.write( data )
-      comport.close()
+      self.comport.write( data )
+      time.sleep( 0.1 )
     return
 
 
-  def sendAll ( self, contents = "" ):
+  def sendPacket ( self, contents = "" ):
     "form a packet and send"
     dat = self.ALPHA_PREAMBLE + self.ALPHA_SOH + self.ALPHA_TYPEALL + self.ALPHA_STX
-    dat = dat + contents
-    dat = dat + self.ALPHA_EOT
+    dat = dat + contents + self.ALPHA_EOT
     self.sendRaw( dat )
     return
 
 
-  def clear ( self ):
+  def clearMem ( self ):
     "clear sign memory"
-    self.sendAll( "E$" ) # write special function, clear memory
+    self.sendPacket( "E$" ) # write special function, clear memory
+    time.sleep( 0.1 )
+    return
 
 
-  def setupMem ( self ):
-    "set up sign memory"
-    dat = "E" # write special function
-    dat = dat + "$"
-    for label in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']:
-      dat = dat + label + "AL" # TEXT file, locked
-      dat = dat + "0100" # file size in hex, 100h = 256 #TODO actually calculate and convert
-      dat = dat + "FF00" # start/stop time, start FFh = always
-    self.sendAll( dat )
+  def setupMem ( self, config = AlphaMemSetup ):
+    "set up sign memory, return list of labels"
+    qqqq = { AlphaMemSetup.TYPE_TEXT : "FFFF", # display always
+    				 AlphaMemSetup.TYPE_STRING : "0000", # ignored
+    				 AlphaMemSetup.TYPE_SMALLDOTS : "2000" } # 3-color image
+    dat = "E$" # write special function, setup memory
+    for entry in config.configlist:
+      dat = dat + entry[1] + entry[0] + "L" # label, type, locked
+      dat = dat + entry[2] # size
+      dat = dat + qqqq[ entry[0] ]
+    self.sendPacket( dat )
+    time.sleep( 0.1 )
     return
 
 
   # time format is "HHMM", 24 hour format, or none to use current local time
   def setClock ( self, settime = "" ):
     "set sign clock"
-    if len(settime) != 4:
+    if len( settime ) != 4:
       settime = time.strftime( "%H%M", time.localtime() )
-    self.sendAll( "E\x20" + settime )
+    self.sendPacket( "E\x20" + settime )
+    return
 
 
   # mode is [a, v], n -> special, o = auto
   # special is n[1,9]  a,b,c, s,u,v,w,x,y,z
   def sendText ( self, msg = "text", mode = "o", label = "0" ):
     "write a text file"
-    dat = "A" + label # write text
-    if len(msg) > 0 and len(mode) > 0:
+    dat = "\x41" + label # write text
+    if len( msg ) > 0 and len( mode ) > 0:
       dat = dat + self.ALPHA_ESC + "0" # display position, ignored on 213C
       dat = dat + mode + msg
-    self.sendAll(dat)
+    self.sendPacket( dat )
     return
 
 
-  def storeText ( self, msg = "text", mode = "b", label = "a" ):
-    "set up memory and store a message"
-    dat = "E" # write special function
-    dat = dat + "$" + label + "AL" # TEXT file, locked
-    dat = dat + "0100" # file size in hex, 100h = 256 #TODO actually calculate and convert
-    dat = dat + "FF00" # start/stop time, start FFh = always
-    self.sendAll( dat )
-    self.sendText( msg, mode, label )
+  def sendString ( self, msg, label ):
+    "write a string file"
+    dat = "\x47" + label # write string
+    dat = dat + msg
+    self.sendPacket( dat )
     return
 
 
-  # sequence is a list of file labels
+  # sequence is a string of file labels
   def setSequence ( self, sequence = "a" ):
     "set up message display sequence"
     dat = "E\x2eSL" # write special function, run in order, locked
     dat = dat + sequence
-    self.sendAll( dat )
+    self.sendPacket( dat )
     return
 
 
@@ -98,18 +188,23 @@ class AlphaSign:
 
 class AlphaCode:
   "a collection of functions for generating Alpha text control codes"
+  
+  ALPHA_NOHOLD = "\x09"
+  ALPHA_FIXLEFT = "\x1e\x31"
+  ALPHA_CALLSTRING = "\x10"
+  
   # color is [0, 11]
   # 0 = red, green, amber, dim red, dim green, brown, orange, yellow,
   # 8 = rainbow1, rainbow2, mix, auto
   def Color ( self, color = 11 ):
     "generate a color control code"
-    code = ""
+    code = ''
     if color >= 0:
       if color < 9:
-        code = "\x1c" + chr(49 + color) # 49 = 31H (red)
+        code = '\x1c' + chr(49 + color) # 49 = 31H (red)
       else:
         if color < 12:
-          code = "\x1c" + chr(65 + color - 9) # 65 = 41H (rainbow2)
+          code = '\x1c' + chr(65 + color - 9) # 65 = 41H (rainbow2)
     return code
 
 
@@ -119,16 +214,16 @@ class AlphaCode:
   # 12 = 7 fancy wide, wide stroke 5
   def Font ( self, font = 0 ):
     "generate a font control code"
-    code = ""
+    code = ''
     if font >= 0 and font < 14:
-      code = "\x1a" + chr( 49 + font )
+      code = '\x1a' + chr( 49 + font )
     return code
   
 
   # speed is [1, 5], default 4
   def Speed ( self, speed = 4 ):
     "generate a speed control code"
-    code = ""
+    code = ''
     if speed > 0 and speed < 6:
       code = chr( 20 + speed )
     return code
