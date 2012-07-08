@@ -156,6 +156,7 @@ textcode['<block>'] = CHR_BLOCK
 #etc
 textcode['<clock>'] = TEXT_CLOCK
 textcode['<slowest>'] = SPEED_1
+textcode['<fast>'] = SPEED_5
 textcode['<fastest>'] = TEXT_NOHOLD
 textcode['<string>'] = TEXT_CALLSTRING
 textcode['<smalldots>'] = TEXT_CALLSMALLDOTS
@@ -164,14 +165,16 @@ textcode['<fixleft>'] = TEXT_FIXLEFT
 
 def encodeText(text):
 	for code, decode in textcode.iteritems():
-		text = text.replace( code, decode )
-	return s
+		text = text.replace(code, decode)
+	return text
 
 
 # sign memory must be configured completely before data is loaded
 # MemConfig allows a memory setup to be built incrementally before sending to the sign
 class _MemConfig(object):
 	"""a helper class to compose a sign's memory configuration"""
+
+	LABEL_PRIORITY = '0'
 
 	def __init__(self):
 		# usable, open file labels
@@ -184,7 +187,7 @@ class _MemConfig(object):
 		self._allocated_string = {}
 		self._allocated_image = {}
 
-	def newText(self, size = 100):
+	def newText(self, size=100):
 		"""add a text file to the configuration and return the file label"""
 		if size < 1:
 			raise Exception('bad text file len {0}'.format(size))
@@ -192,7 +195,7 @@ class _MemConfig(object):
 		self._allocated_text[label] = '{0}AL{1:04X}FFFF'.format(label, size)
 		return label
 
-	def newString(self, size = 100):
+	def newString(self, size=100):
 		"""add a string file to the configuration and return the file label"""
 		if size < 1:
 			raise Exception('bad string file len {0}'.format(size))
@@ -200,8 +203,10 @@ class _MemConfig(object):
 		self._allocated_string[label] = '{0}BL{1:04X}0000'.format(label, size)
 		return label
 
-	def newSmalldots(self, width, height, format = DOTS_8COLOR):
+	def newSmalldots(self, width, height, format=None):
 		"""add a SMALLDOTS image file to the configuration return the file label"""
+		if format is None:
+			format = DOTS_8COLOR
 		if width < 0 or width > 255 or height < 0 or height > 31:
 			raise Exception('bad smalldots dimensions {0} by {1}'.format(width, height))
 		if format not in [DOTS_MONO, DOTS_3COLOR, DOTS_8COLOR]:
@@ -232,139 +237,165 @@ class Sign(object):
 	"""interface to BetaBrite model 1036 on serial port"""
 
 	# nest memory config class
-	self.MemConfig = _MemConfig
+	MemConfig = _MemConfig
 
-	def __init__ ( self, port = 0 ): # port may also be a dev file name
-		self.comm = serial.Serial( port, 9600 )
-		self.commwait = 0.1 # certain transmissions call for a short delay
+	def __init__(self, port = 0): # port may also be a dev file name
+		self._comm = serial.Serial(port, 9600)
+		self._commwait = 0.1 # certain transmissions call for a short delay
 
-	def clearMem ( self ):
-		self.sendPacket( 'E$' ) # write special function, setup memory
-		time.sleep( self.commwait )
+	def clear(self):
+		"""clear memory, leave sign blank"""
+		self.clearMem()
+		self.clearPriority()
 
-	def setupMem ( self, config = MemConfig() ):
-		self.sendPacket( 'E$' + config.getSetupString() )
-		time.sleep( self.commwait )
+	def clearMem(self):
+		self._sendPacket('E$') # write special function, setup memory
+		time.sleep(self._commwait)
 
-	def sendText ( self, label, msg, mode = MODE_HOLD ):
+	def setupMem(self, config):
+		if type(config) != self.MemConfig:
+			raise Exception('config is not a MemConfig')
+		self._sendPacket('E$' + config.getSetupString())
+		time.sleep(self._commwait)
+
+	def sendText(self, label, msg, mode=None):
 		"""write a text file"""
-		if not label:
-			return
+		if type(label) != str or len(label) != 1:
+			raise Exception('label is not a file label character')
+		if type(msg) != str:
+			raise Exception('msg is not a string')
+		if mode is None:
+			mode = MODE_HOLD
+		if label == self.MemConfig.LABEL_PRIORITY and len(msg) > 125:
+			raise Exception('text too long for priority file')
 		dat = 'A' + label # write text
 		if msg and mode:
 			dat = dat + ALPHA_ESC + '0' # display position, ignored on 213C
 			dat = dat + mode + msg
-		self.sendPacket( dat )
+		self._sendPacket(dat)
 
-	def sendTextPriority ( self, msg = '', mode = MODE_HOLD ):
-		self.sendText( '0', msg[ : 125 ], mode )
+	def sendTextPriority(self, msg, mode=None):
+		self.sendText(self.MemConfig.LABEL_PRIORITY, msg, mode)
 
-	def getText ( self, label = '0', stripmode = True ):
-		self.sendPacket( 'B' + label ) # read text
-		txt = self.recvPacket()
-		if not txt.startswith( 'A' + label ):
+	def clearPriority(self):
+		self.sendTextPriority('')
+
+	def getText(self, label, stripmode=True):
+		if type(label) != str or len(label) != 1:
+			raise Exception('label is not a file label character')
+		self._sendPacket('B' + label) # read text
+		txt = self._recvPacket()
+		if not txt.startswith('A' + label):
 			return ''
-		txt = txt[ 2: ] # strip type/label
-		if stripmode and txt[ 0 ] == ALPHA_ESC:
-			txt = txt[ 2: ] # strip ESC and disp. pos.
-			if txt[ 0 ] == 'n': # special mode
-				txt = txt[ 2: ] # strip special mode
+		txt = txt[2:] # strip type/label
+		if stripmode and txt[0] == ALPHA_ESC:
+			txt = txt[2:] # strip ESC and disp. pos.
+			if txt[0] == 'n': # special mode
+				txt = txt[2:] # strip special mode
 			else:
-				txt = txt[ 1: ] # strip normal mode
+				txt = txt[1:] # strip normal mode
 		return txt
 
-	def sendString ( self, label, msg ):
+	def sendString(self, label, msg):
 		"""write a string file"""
-		self.sendPacket( 'G' + label + msg )
+		self._sendPacket('G' + label + msg)
 
-	def sendSmalldots ( self, label, rows ):
+	def sendSmalldots(self, label, rows):
 		"""rows is a list of strings"""
-		dat = 'I{0}{1:02X}{2:02X}'.format( label, len( rows ), len( rows[0] ) )
+		dat = 'I{0}{1:02X}{2:02X}'.format(label, len(rows), len(rows[0]))
 		for row in rows:
 			dat = dat + row + ALPHA_CR
-		self.sendPacket( dat )
+		self._sendPacket(dat)
 
-	def getSmalldots ( self, label ):
+	def getSmalldots(self, label):
 		"""returns the format sendSmalldots accepts"""
-		self.sendPacket( 'J' + label )
-		dots = self.recvPacket()
-		if not dots.startswith( 'I' + label ):
+		self._sendPacket('J' + label)
+		dots = self._recvPacket()
+		if not dots.startswith('I' + label):
 			return []
-		dots = dots[ 2: ] # strip type/label
-		if len( dots ) < 4:
+		dots = dots[2:] # strip type/label
+		if len(dots) < 4:
 			return []
-		height = int( dots[ 0:2 ], 16 )
-		width = int( dots[ 2:4 ], 16 )
-		dots = dots[ 4: ] # strip dimensions
-		dots = dots.rstrip( ALPHA_CR )
-		rows = dots.split( ALPHA_CR )
+		height = int(dots[0:2], 16)
+		width = int(dots[2:4], 16)
+		dots = dots[4:] # strip dimensions
+		dots = dots.rstrip(ALPHA_CR)
+		rows = dots.split(ALPHA_CR)
 		return rows
 
-	def setSequence ( self, sequence = 'a' ):
+	def setSequence(self, sequence):
 		"""set message display sequence, sequence is a string of file labels"""
-		self.sendPacket( 'E.SL' + sequence ) # write special function, run in order, locked
+		if type(sequence) != str:
+			raise Exception('sequence is not a string')
+		self._sendPacket('E.SL' + sequence) # write special function, run in order, locked
 
-	def setClock ( self, settime = '' ):
+	def setClock(self, settime=None):
 		"""# time format is 'HHMM', 24 hour format, or omit to use current system time"""
-		if len( settime ) != 4:
-			settime = time.strftime( '%H%M', time.localtime() )
-		self.sendPacket( 'E ' + settime )
+		if settime is None:
+			settime = time.strftime('%H%M', time.localtime())
+		if len(settime) != 4:
+			raise Exception('not a valid time')
+		self._sendPacket('E ' + settime)
 
-	def getClock ( self ):
+	def getClock(self):
 		"""# time format is 'HHMM', 24 hour format"""
-		dat = self.getSpecialFunc( ' ' )
-		if len( dat ) != 4:
-			return ''
+		dat = self._getSpecialFunc(' ')
+		if len(dat) != 4:
+			raise Exception('Couldn\'t get time. Sign clock may not be set.')
 		return dat
 
-	def getMeminfo ( self ):
+	def getMeminfo(self):
 		"""query sign, return tuple describing memory (bytestotal, bytesfree)"""
-		meminfo = self.getSpecialFunc( '#' )
-		if len( meminfo ) != 9:
-			return ( 0, 0 )
-		return ( int( meminfo[0:4], 16 ), int( meminfo[5:9], 16 ) )
+		meminfo = self._getSpecialFunc('#')
+		if len(meminfo) != 9:
+			raise Exception('Couldn\'t get memory status.')
+		return (int(meminfo[0:4], 16), int(meminfo[5:9], 16))
 
-	def enableSpeaker ( self ):
-		self.sendPacket( 'E!00' )
-		self.sendPacket( 'E(A' )
+	def enableSpeaker(self):
+		self._sendPacket('E!00')
+		self._sendPacket('E(A')
 
-	def disableSpeaker ( self ):
-		self.sendPacket( 'E!FF' )
-		self.sendPacket( 'E(B' )
+	def disableSpeaker(self):
+		self._sendPacket('E!FF')
+		self._sendPacket('E(B')
 
-	def beep ( self, type = SND_LONGBEEP ):
-		self.sendPacket( 'E(' + type )
+	def beep(self):
+		self._sendPacket('E(' + SND_LONGBEEP)
 
-	def sendPacket ( self, contents = '' ):
-		if self.commwait > 0 and contents.startswith( 'I' ): # sending smalldots
-			self.comm.write( ALPHA_PREAMBLE + ALPHA_SOH + ALPHA_TYPEALL + ALPHA_STX + contents[ : 5 ] )
-			time.sleep( self.commwait )
-			self.comm.write( contents[ 5 : ] + ALPHA_EOT )
+	def beepTriple(self):
+		self._sendPacket('E(' + SND_3BEEPS)
+
+	def _sendPacket(self, contents):
+		preamble = ALPHA_PREAMBLE + ALPHA_SOH + ALPHA_TYPEALL + ALPHA_STX
+		if self._commwait > 0 and contents.startswith('I'): # sending smalldots
+			self._comm.write(preamble + contents[:5])
+			time.sleep(self._commwait)
+			self._comm.write(contents[5:] + ALPHA_EOT)
 		else:
-			self.comm.write( ALPHA_PREAMBLE + ALPHA_SOH + ALPHA_TYPEALL + ALPHA_STX + contents + ALPHA_EOT )
-		time.sleep( self.commwait )
+			self._comm.write(preamble + contents + ALPHA_EOT)
+		time.sleep(self._commwait)
 
-	def recvPacket ( self ):
-		self.comm.timeout = 1
+	def _recvPacket(self):
+		self._comm.timeout = 1
 		got = ''
 		while True:
-			c = self.comm.read()
+			c = self._comm.read()
 			got += c
 			if not c or c == ALPHA_EOT:
 				break
 		
 		leadin = ALPHA_SOH + '000' + ALPHA_STX
-		leadini = got.find( leadin )
-		if leadini == -1:
+		leadinpos = got.find(leadin)
+		if leadinpos == -1:
 			return ''
-		endi = got.find( ALPHA_ETX, leadini + len( leadin ) )
-		if endi == -1:
+		endpos = got.find(ALPHA_ETX, leadinpos + len(leadin))
+		if endpos == -1:
 			return ''
-		return got[ leadini + len( leadin ) : endi ]
+		return got[leadinpos + len(leadin) : endpos]
 
-	def getSpecialFunc ( self, specialfunc ):
-		self.sendPacket( 'F' + specialfunc )
-		dat = self.recvPacket()
-		if not dat.startswith( 'E' + specialfunc ):
+	def _getSpecialFunc(self, specialfunc):
+		self._sendPacket('F' + specialfunc)
+		dat = self._recvPacket()
+		if not dat.startswith('E' + specialfunc):
 			return ''
-		return dat[ 1 + len( specialfunc ) : ]
+		return dat[len(specialfunc) + 1 :]
