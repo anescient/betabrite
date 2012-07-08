@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import AlphaSign
+import betabrite
 import time
 import random
 
 def main():
-	s = AlphaSign.Sign( '/dev/ttyUSB0' )
+	s = betabrite.Sign( '/dev/ttyUSB0' )
 	s.clearMem()
 	
 	tree = [
@@ -45,7 +45,7 @@ def main():
 	'050555000'
 	]
 	
-	mem = AlphaSign.Sign.MemConfig()
+	mem = betabrite.Sign.MemConfig()
 	treefile = mem.pushSmalldots( len(tree[0]), len(tree) )
 	#tree2file = mem.pushSmalldots( len(tree2[0]), len(tree2) )
 	hollyfile = mem.pushSmalldots( len(holly[0]), len(holly) )
@@ -59,9 +59,9 @@ def main():
 	#s.sendSmalldots( tree2file, tree2 )
 	s.sendSmalldots( hollyfile, holly )
 	s.sendSmalldots( wreathfile, wreath )
-	#s.sendText( frame1, AlphaSign.encodeText( '<fastest><smalldots>{0} <smalldots>{1} <smalldots>{2}'.format(treefile,hollyfile,wreathfile) ) )
-	s.sendText( frame1, AlphaSign.encodeText( '<smalldots>{0}'.format(wreathfile) ) )
-	#s.sendText( frame2, AlphaSign.encodeText( ' '.join( ['<fastest><smalldots>{0} <smalldots>{1}'.format(tree2file,hollyfile)] * 2 ) ) )
+	#s.sendText( frame1, betabrite.encodeText( '<fastest><smalldots>{0} <smalldots>{1} <smalldots>{2}'.format(treefile,hollyfile,wreathfile) ) )
+	s.sendText( frame1, betabrite.encodeText( '<smalldots>{0}'.format(wreathfile) ) )
+	#s.sendText( frame2, betabrite.encodeText( ' '.join( ['<fastest><smalldots>{0} <smalldots>{1}'.format(tree2file,hollyfile)] * 2 ) ) )
 	s.setSequence( frame1 )
 	#s.setSequence( frame1 + frame2 )
 	

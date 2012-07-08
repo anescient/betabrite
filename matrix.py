@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 
-import AlphaSign
+import betabrite
 import time
 import random
 
 def main():
-	s = AlphaSign.Sign( '/dev/ttyUSB0' )
+	s = betabrite.Sign( '/dev/ttyUSB0' )
 	s.clearMem()
 
 	imgw = 80
 	imgh = 7
 	framecount = 4
 	
-	mem = AlphaSign.Sign.MemConfig()
+	mem = betabrite.Sign.MemConfig()
 	frames = [ mem.pushSmalldots( imgw, imgh ) for i in xrange( framecount ) ]
 	txtfile = mem.pushText( framecount * 10 )
 	s.setupMem( mem )
@@ -22,12 +22,12 @@ def main():
 		img = [ ''.join( random.choice( '005' if col not in cut else '0' ) for col in xrange( imgw ) ) for row in xrange( imgh ) ]
 		s.sendSmalldots( f, img )
 	
-	txt = AlphaSign.encodeText('<fastest>')
+	txt = betabrite.encodeText('<fastest>')
 	for f in frames[ 3:4 ]:
-		txt += AlphaSign.encodeText('<smalldots>{0}'.format( f ))
+		txt += betabrite.encodeText('<smalldots>{0}'.format( f ))
 	print ' '.join( '{0:02X}'.format(ord(c)) for c in txt )
-	#print AlphaSign.encodeText( txt )
-	s.sendText( txtfile, txt, AlphaSign.MODE_ROLLDOWN )
+	#print betabrite.encodeText( txt )
+	s.sendText( txtfile, txt, betabrite.MODE_ROLLDOWN )
 	
 	s.setSequence( txtfile )
 

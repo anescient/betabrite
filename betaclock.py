@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-import AlphaSign
+import betabrite
 
 def main ():
-	s = AlphaSign.Sign( '/dev/ttyUSB0' )
+	s = betabrite.Sign( '/dev/ttyUSB0' )
 	s.clearMem()
 	s.setClock()
 	print s.getClock()
-	s.sendTextPriority( AlphaSign.encodeText( '<slowest><dimred><5><clock>' ) )
+	s.sendTextPriority( betabrite.encodeText( '<slowest><dimred><7bold><clock>' ) )
 	return 0
 
 if __name__ == '__main__': main()

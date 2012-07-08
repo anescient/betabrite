@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 #
-#       AlphaSign.py
-#       Copyright 2009 anescient
+#       betabrite.py
+#       Alpha marquee sign serial protocol implementation
+#         specifically targeted to model 1036 BetaBrite
+#       by anescient
 
-
-import serial
-import time
+import serial, time
 
 # formatting strings
 FONT_5STD = '\x1a\x31'
 FONT_5STROKE = '\x1a\x32'
-FONT_7SLIM = '\x1a\x33'						# sign default
+FONT_7SLIM = '\x1a\x33' # sign default
 FONT_7STROKE = '\x1a\x34'
 FONT_7SLIMFANCY = '\x1a\x35'
 FONT_7STROKEFANCY = '\x1a\x36'
@@ -31,32 +31,31 @@ COLOR_DIMGREEN = '\x1c\x35'
 COLOR_BROWN = '\x1c\x36'
 COLOR_ORANGE = '\x1c\x37'
 COLOR_YELLOW = '\x1c\x38'
-COLOR_RAINBOW1 = '\x1c\x39'				# gradient
-COLOR_RAINBOW2 = '\x1c\x41'				# mixed patches
-COLOR_MIX = '\x1c\x42'						# mixed solid characters
-COLOR_AUTO = '\x1c\x43'						# sign default
+COLOR_RAINBOW1 = '\x1c\x39' # gradient
+COLOR_RAINBOW2 = '\x1c\x41' # mixed patches
+COLOR_MIX = '\x1c\x42' # mixed solid characters
+COLOR_AUTO = '\x1c\x43' # sign default
 
 SPEED_1 = '\x15'
 SPEED_2 = '\x16'
 SPEED_3 = '\x17'
-SPEED_4 = '\x18'									# sign default
+SPEED_4 = '\x18' # sign default
 SPEED_5 = '\x19'
 
-TEXT_NOHOLD = '\x09'							# no delay before next message
+TEXT_NOHOLD = '\x09' # no delay before next message
 TEXT_FIXLEFT = '\x1e\x31'
-TEXT_CALLSTRING = '\x10'					# follow this code with a string file label
-TEXT_CALLSMALLDOTS = '\x14'				# follow with a smalldots file label
-TEXT_CLOCK = '\x13'								# show time
+TEXT_CALLSTRING = '\x10' # follow with a string file label
+TEXT_CALLSMALLDOTS = '\x14' # follow with a smalldots file label
+TEXT_CLOCK = '\x13' # show time
 TEXT_NEWLINE = '\x0d'
 
+# text between these two will flash
 TEXT_FLASHON = '\x071'
-TEXT_FLASHOFF = '\x070'						# text between these two will flash
+TEXT_FLASHOFF = '\x070'
 
 CHR_BLOCK = '\x7f' # not available in size 5 fonts
 
-
 # transition effects, used at text loading time, not in-line formatting
-# commented modes not available on betabrite 1036
 MODE_ROTATE = 'a'
 MODE_HOLD = 'b'
 MODE_FLASH = 'c'
@@ -70,26 +69,26 @@ MODE_WIPELEFT = 'k'
 MODE_WIPERIGHT = 'l'
 MODE_SCROLL = 'm'
 MODE_AUTO = 'o'
-#MODE_ROLLIN = 'p'
-#MODE_ROLLOUT = 'q'
-#MODE_WIPEIN = 'r'
-#MODE_WIPEOUT = 's'
+#MODE_ROLLIN = 'p' # not available on betabrite 1036
+#MODE_ROLLOUT = 'q' # not available on betabrite 1036
+#MODE_WIPEIN = 'r' # not available on betabrite 1036
+#MODE_WIPEOUT = 's' # not available on betabrite 1036
 MODE_ROTATECOMPRESSED = 't'
-#MODE_EXPLODE = 'u'
-#MODE_CLOCK = 'v'
+#MODE_EXPLODE = 'u' # not available on betabrite 1036
+#MODE_CLOCK = 'v' # not available on betabrite 1036
 MODE_TWINKLE = 'n0'
 MODE_SPARKLE = 'n1'
 MODE_SNOW = 'n2'
 MODE_INTERLOCK = 'n3'
-#MODE_SWITCH = 'n4'
-#MODE_SLIDE = 'n5'
+#MODE_SWITCH = 'n4' # not available on betabrite 1036
+#MODE_SLIDE = 'n5' # not available on betabrite 1036
 MODE_SPRAY = 'n6'
 MODE_STARBURST = 'n7'
 MODE_WELCOME = 'n8'
 MODE_SLOTMACHINE = 'n9'
 MODE_NEWSFLASH = 'nA'
 MODE_TRUMPET = 'nB'
-#MODE_CYCLECOLORS = 'nC'
+#MODE_CYCLECOLORS = 'nC' # not available on betabrite 1036
 MODE_THANKYOU = 'nS'
 MODE_NOSMOKING = 'nU'
 MODE_DRINKDRIVE = 'nV'
@@ -101,13 +100,13 @@ MODE_BOMB = 'nZ'
 SND_LONGBEEP = '\x30'
 SND_3BEEPS = '\x31'
 
-ALPHA_PREAMBLE = '\x00' * 5				# may also be = '\x01' * 5
-ALPHA_TYPEALL = 'Z00'							# all sign types, all addresses
-ALPHA_SOH = '\x01'								# start of header
-ALPHA_STX = '\x02'								# start of text (note: have >100ms delay after STX for nested packets)
-ALPHA_ETX = '\x03'								# end of text
-ALPHA_EOT = '\x04'								# end of transmission
-ALPHA_ESC = '\x1b'								# escape
+ALPHA_PREAMBLE = '\x00' * 5 # may also be = '\x01' * 5
+ALPHA_TYPEALL = 'Z00' # all sign types, all addresses
+ALPHA_SOH = '\x01' # start of header
+ALPHA_STX = '\x02' # start of text (note: have >100ms delay after STX for nested packets)
+ALPHA_ETX = '\x03' # end of text
+ALPHA_EOT = '\x04' # end of transmission
+ALPHA_ESC = '\x1b' # escape
 ALPHA_CR = '\x0d'
 ALPHA_LF = '\x0a'
 
@@ -127,37 +126,36 @@ DOTC_YELLOW = '8'
 
 textcode = {}
 #fonts
-textcode[ '<5>' ] = FONT_5STD
-textcode[ '<5bold>' ] = FONT_5STROKE
-textcode[ '<5wide>' ] = FONT_5WIDE
-textcode[ '<5huge>' ] = FONT_5WIDESTROKE
-textcode[ '<7>' ] = FONT_7SLIM
-textcode[ '<7bold>' ] = FONT_7STROKE
-textcode[ '<7wide>' ] = FONT_7WIDE
-textcode[ '<7huge>' ] = FONT_7WIDESTROKE
+textcode['<5>'] = FONT_5STD
+textcode['<5bold>'] = FONT_5STROKE
+textcode['<5wide>'] = FONT_5WIDE
+textcode['<5huge>'] = FONT_5WIDESTROKE
+textcode['<7>'] = FONT_7SLIM
+textcode['<7bold>'] = FONT_7STROKE
+textcode['<7wide>'] = FONT_7WIDE
+textcode['<7huge>'] = FONT_7WIDESTROKE
 #colors
-textcode[ '<autocolor>' ] = COLOR_AUTO
-textcode[ '<red>' ] = COLOR_RED
-textcode[ '<dimred>' ] = COLOR_DIMRED
-textcode[ '<green>' ] = COLOR_GREEN
-textcode[ '<dimgreen>' ] = COLOR_DIMGREEN
-textcode[ '<yellow>' ] = COLOR_YELLOW
-textcode[ '<amber>' ] = COLOR_AMBER
-textcode[ '<orange>' ] = COLOR_ORANGE
-textcode[ '<brown>' ] = COLOR_BROWN
-textcode[ '<mixcolor>' ] = COLOR_MIX
-textcode[ '<rainbow>' ] = COLOR_RAINBOW1
-textcode[ '<patchcolor>' ] = COLOR_RAINBOW2
+textcode['<autocolor>'] = COLOR_AUTO
+textcode['<red>'] = COLOR_RED
+textcode['<dimred>'] = COLOR_DIMRED
+textcode['<green>'] = COLOR_GREEN
+textcode['<dimgreen>'] = COLOR_DIMGREEN
+textcode['<yellow>'] = COLOR_YELLOW
+textcode['<amber>'] = COLOR_AMBER
+textcode['<orange>'] = COLOR_ORANGE
+textcode['<brown>'] = COLOR_BROWN
+textcode['<mixcolor>'] = COLOR_MIX
+textcode['<rainbow>'] = COLOR_RAINBOW1
+textcode['<patchcolor>'] = COLOR_RAINBOW2
 #special characters
-textcode[ '<block>' ] = CHR_BLOCK
+textcode['<block>'] = CHR_BLOCK
 #etc
-textcode[ '<clock>' ] = TEXT_CLOCK
-textcode[ '<slowest>' ] = SPEED_1
-textcode[ '<fastest>' ] = TEXT_NOHOLD
-textcode[ '<string>' ] = TEXT_CALLSTRING
-textcode[ '<smalldots>' ] = TEXT_CALLSMALLDOTS
-textcode[ '<fixleft>' ] = TEXT_FIXLEFT
-textcode[ '\n' ] = TEXT_NEWLINE
+textcode['<clock>'] = TEXT_CLOCK
+textcode['<slowest>'] = SPEED_1
+textcode['<fastest>'] = TEXT_NOHOLD
+textcode['<string>'] = TEXT_CALLSTRING
+textcode['<smalldots>'] = TEXT_CALLSMALLDOTS
+textcode['<fixleft>'] = TEXT_FIXLEFT
 
 def encodeText ( s ):
 	for code, decode in textcode.iteritems():
@@ -172,22 +170,20 @@ class Sign:
 	# MemConfig allows a memory setup to be built incrementally before sending to the sign
 	class MemConfig:
 		#files_avail set of unused labels
-		#files_text { label: configstring including label }
+		#files_text {  }
 		#files_string
 		#files_dots
 
 		def __init__ ( self ):
 			self.clear()
 
-
 		def clear ( self ):
-			self.files_avail = set([ chr(c) for c in xrange( 0x20, 0x7f ) if chr(c) not in set('A012345?'+' \x7e') ])
+			self.files_avail = set([chr(c) for c in xrange(0x20, 0x7f) if chr(c) not in set('A012345?'+' \x7e')])
 			# exclude labels with any kind of special function
 			# also exclude labels that act 'weird' in experimentation
-			self.files_text = {}
+			self.files_text = {} # label: configstring including label
 			self.files_string = {}
 			self.files_dots = {}
-
 
 		def pushText ( self, size = 100 ):
 			"""add a text file to the configuration and return the file label, or empty string on failure"""
@@ -197,7 +193,6 @@ class Sign:
 			self.files_text[ label ] = '{0}AL{1:04X}FFFF'.format( label, size )
 			return label
 
-
 		def pushString ( self, size = 100 ):
 			"""add a string file to the configuration and return the file label, or empty string on failure"""
 			if size < 1 or not self.files_avail:
@@ -206,7 +201,6 @@ class Sign:
 			self.files_string[ label ] = '{0}BL{1:04X}0000'.format( label, size )
 			return label
 
-
 		def pushSmalldots ( self, width, height, format = DOTS_8COLOR ):
 			"""add a SMALLDOTS image file to the configuration and return the file label, or empty string on failure"""
 			if width < 0 or width > 255 or height < 0 or height > 31 or not self.files_avail:
@@ -214,7 +208,6 @@ class Sign:
 			label = self.files_avail.pop()
 			self.files_dots[ label ] = '{0}DL{1:02X}{2:02X}{3}'.format( label, height, width, format )
 			return label
-
 
 		def getSetupString ( self ):
 			"""return entire memory configuration string for current state"""
@@ -237,7 +230,6 @@ class Sign:
 		self.comm = serial.Serial( port, 9600 )
 		self.commwait = 0.1 # certain transmissions call for a short delay
 
-
 	def clearMem ( self ):
 		self.sendPacket( 'E$' ) # write special function, setup memory
 		time.sleep( self.commwait )
@@ -245,7 +237,6 @@ class Sign:
 	def setupMem ( self, config = MemConfig() ):
 		self.sendPacket( 'E$' + config.getSetupString() )
 		time.sleep( self.commwait )
-
 
 	def sendText ( self, label, msg, mode = MODE_HOLD ):
 		"""write a text file"""
@@ -256,7 +247,7 @@ class Sign:
 			dat = dat + ALPHA_ESC + '0' # display position, ignored on 213C
 			dat = dat + mode + msg
 		self.sendPacket( dat )
-	
+
 	def sendTextPriority ( self, msg = '', mode = MODE_HOLD ):
 		self.sendText( '0', msg[ : 125 ], mode )
 
@@ -274,11 +265,9 @@ class Sign:
 				txt = txt[ 1: ] # strip normal mode
 		return txt
 
-
 	def sendString ( self, label, msg ):
 		"""write a string file"""
 		self.sendPacket( 'G' + label + msg )
-
 
 	def sendSmalldots ( self, label, rows ):
 		"""rows is a list of strings"""
@@ -303,11 +292,9 @@ class Sign:
 		rows = dots.split( ALPHA_CR )
 		return rows
 
-
 	def setSequence ( self, sequence = 'a' ):
 		"""set message display sequence, sequence is a string of file labels"""
 		self.sendPacket( 'E.SL' + sequence ) # write special function, run in order, locked
-
 
 	def setClock ( self, settime = '' ):
 		"""# time format is 'HHMM', 24 hour format, or omit to use current system time"""
@@ -322,14 +309,12 @@ class Sign:
 			return ''
 		return dat
 
-
 	def getMeminfo ( self ):
 		"""query sign, return tuple describing memory (bytestotal, bytesfree)"""
 		meminfo = self.getSpecialFunc( '#' )
 		if len( meminfo ) != 9:
 			return ( 0, 0 )
 		return ( int( meminfo[0:4], 16 ), int( meminfo[5:9], 16 ) )
-
 
 	def enableSpeaker ( self ):
 		self.sendPacket( 'E!00' )
@@ -342,7 +327,6 @@ class Sign:
 	def beep ( self, type = SND_LONGBEEP ):
 		self.sendPacket( 'E(' + type )
 
-
 	def sendPacket ( self, contents = '' ):
 		if self.commwait > 0 and contents.startswith( 'I' ): # sending smalldots
 			self.comm.write( ALPHA_PREAMBLE + ALPHA_SOH + ALPHA_TYPEALL + ALPHA_STX + contents[ : 5 ] )
@@ -351,7 +335,6 @@ class Sign:
 		else:
 			self.comm.write( ALPHA_PREAMBLE + ALPHA_SOH + ALPHA_TYPEALL + ALPHA_STX + contents + ALPHA_EOT )
 		time.sleep( self.commwait )
-
 
 	def recvPacket ( self ):
 		self.comm.timeout = 1
@@ -370,7 +353,6 @@ class Sign:
 		if endi == -1:
 			return ''
 		return got[ leadini + len( leadin ) : endi ]
-
 
 	def getSpecialFunc ( self, specialfunc ):
 		self.sendPacket( 'F' + specialfunc )
