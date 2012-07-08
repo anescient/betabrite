@@ -5,7 +5,9 @@
 #         specifically targeted to model 1036 BetaBrite
 #       by anescient
 
-import serial, time
+import serial
+import time
+
 
 # formatting strings
 FONT_5STD = '\x1a\x31'
@@ -110,10 +112,12 @@ ALPHA_ESC = '\x1b' # escape
 ALPHA_CR = '\x0d'
 ALPHA_LF = '\x0a'
 
+# image file types
 DOTS_MONO = '1000'
 DOTS_3COLOR = '2000'
 DOTS_8COLOR = '4000'
 
+# image pixel colors
 DOTC_BLACK = '0'
 DOTC_RED = '1'
 DOTC_GREEN = '2'
@@ -157,74 +161,78 @@ textcode['<string>'] = TEXT_CALLSTRING
 textcode['<smalldots>'] = TEXT_CALLSMALLDOTS
 textcode['<fixleft>'] = TEXT_FIXLEFT
 
-def encodeText ( s ):
+
+def encodeText(text):
 	for code, decode in textcode.iteritems():
-		s = s.replace( code, decode )
+		text = text.replace( code, decode )
 	return s
 
 
-class Sign:
+# sign memory must be configured completely before data is loaded
+# MemConfig allows a memory setup to be built incrementally before sending to the sign
+class _MemConfig(object):
+	"""a helper class to compose a sign's memory configuration"""
+
+	def __init__(self):
+		# usable, open file labels
+		self._labels_available = set(chr(c) for c in xrange(0x20, 0x7f))
+		self._labels_available -= set('A012345?') # exclude labels with any special function
+		self._labels_available -= set(' \x7e') # exclude labels that act 'weird' in experimentation
+
+		# label : configstring including label
+		self._allocated_text = {}
+		self._allocated_string = {}
+		self._allocated_image = {}
+
+	def newText(self, size = 100):
+		"""add a text file to the configuration and return the file label"""
+		if size < 1:
+			raise Exception('bad text file len {0}'.format(size))
+		label = self._popFileLabel()
+		self._allocated_text[label] = '{0}AL{1:04X}FFFF'.format(label, size)
+		return label
+
+	def newString(self, size = 100):
+		"""add a string file to the configuration and return the file label"""
+		if size < 1:
+			raise Exception('bad string file len {0}'.format(size))
+		label = self._popFileLabel()
+		self._allocated_string[label] = '{0}BL{1:04X}0000'.format(label, size)
+		return label
+
+	def newSmalldots(self, width, height, format = DOTS_8COLOR):
+		"""add a SMALLDOTS image file to the configuration return the file label"""
+		if width < 0 or width > 255 or height < 0 or height > 31:
+			raise Exception('bad smalldots dimensions {0} by {1}'.format(width, height))
+		if format not in [DOTS_MONO, DOTS_3COLOR, DOTS_8COLOR]:
+			raise Exception('bad dots color mode {0}'.format(format))
+		label = self._popFileLabel()
+		self._allocated_image[label] = '{0}DL{1:02X}{2:02X}{3}'.format(label, height, width, format)
+		return label
+
+	def _popFileLabel(self):
+		if not self._labels_available:
+			raise Exception('file labels exhausted')
+		# file labels seem to be arbitrary in the sign (any label for any file type)
+		return self._labels_available.pop()
+
+	def getSetupString(self):
+		"""return entire memory configuration string for current state"""
+		# the order in which file configs are presented to the sign is relevant
+		# the order _seems_ to be text then images then strings
+		# ... finally, according to documentation, something called counter-text files
+		configStrings = []
+		configStrings += self._allocated_text.values()
+		configStrings += self._allocated_image.values()
+		configStrings += self._allocated_string.values()
+		return ''.join(configStrings)
+
+
+class Sign(object):
 	"""interface to BetaBrite model 1036 on serial port"""
 
-	# sign memory must be configured completely before data is loaded
-	# MemConfig allows a memory setup to be built incrementally before sending to the sign
-	class MemConfig:
-		#files_avail set of unused labels
-		#files_text {  }
-		#files_string
-		#files_dots
-
-		def __init__ ( self ):
-			self.clear()
-
-		def clear ( self ):
-			self.files_avail = set([chr(c) for c in xrange(0x20, 0x7f) if chr(c) not in set('A012345?'+' \x7e')])
-			# exclude labels with any kind of special function
-			# also exclude labels that act 'weird' in experimentation
-			self.files_text = {} # label: configstring including label
-			self.files_string = {}
-			self.files_dots = {}
-
-		def pushText ( self, size = 100 ):
-			"""add a text file to the configuration and return the file label, or empty string on failure"""
-			if size < 1 or not self.files_avail:
-				return ''
-			label = self.files_avail.pop()
-			self.files_text[ label ] = '{0}AL{1:04X}FFFF'.format( label, size )
-			return label
-
-		def pushString ( self, size = 100 ):
-			"""add a string file to the configuration and return the file label, or empty string on failure"""
-			if size < 1 or not self.files_avail:
-				return ''
-			label = self.files_avail.pop()
-			self.files_string[ label ] = '{0}BL{1:04X}0000'.format( label, size )
-			return label
-
-		def pushSmalldots ( self, width, height, format = DOTS_8COLOR ):
-			"""add a SMALLDOTS image file to the configuration and return the file label, or empty string on failure"""
-			if width < 0 or width > 255 or height < 0 or height > 31 or not self.files_avail:
-				return ''
-			label = self.files_avail.pop()
-			self.files_dots[ label ] = '{0}DL{1:02X}{2:02X}{3}'.format( label, height, width, format )
-			return label
-
-		def getSetupString ( self ):
-			"""return entire memory configuration string for current state"""
-			# the order in which file configs are presented to the sign _is_ relevant
-			# apparently they must be
-			#   1st: all text files, then
-			#   2nd: all dots files, then
-			#   3rd: all strings files, then
-			#   4th: all counter-text files (?)
-			# file labels /should/ be 100% arbitrary
-			config = ''
-			config += ''.join( s for l, s in self.files_text.iteritems() )
-			config += ''.join( s for l, s in self.files_dots.iteritems() )
-			config += ''.join( s for l, s in self.files_string.iteritems() )
-			return config
-
-	######################################################
+	# nest memory config class
+	self.MemConfig = _MemConfig
 
 	def __init__ ( self, port = 0 ): # port may also be a dev file name
 		self.comm = serial.Serial( port, 9600 )
