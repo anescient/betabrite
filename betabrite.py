@@ -101,6 +101,7 @@ MODE_BOMB = 'nZ'
 
 SND_LONGBEEP = '\x30'
 SND_3BEEPS = '\x31'
+SND_TONE = '\x32'
 
 # protocol note: have >100ms delay after STX for nested packets
 ALPHA_PREAMBLE = '\x00' * 5  # may also be = '\x01' * 5
@@ -372,6 +373,28 @@ class Sign(object):
     def disableSpeaker(self):
         self._sendPacket('E!FF')
         self._sendPacket('E(B')
+
+    def tone(self, duration, repeat=None):
+        """
+            duration is in units of 0.1 second, maximum 15
+            repeat, maximum 15
+        """
+        if not 1 <= duration <= 15:
+            raise Exception('invalid duration')
+
+        if repeat is None:
+            repeat = 0
+        if not 0 <= repeat <= 15:
+            raise Exception('invalid repeat count')
+
+        # model 1036 doesn't seem capable of varying frequency
+        # '00' is silent
+        # 'FF' will cause a sign reset
+        # all others sound the same
+        freq = '44'
+
+        self._sendPacket(
+            'E({}{}{:1X}{:1X}'.format(SND_TONE, freq, duration, repeat))
 
     def beep(self):
         self._sendPacket('E(' + SND_LONGBEEP)
