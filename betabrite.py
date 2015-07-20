@@ -193,6 +193,12 @@ class _MemConfig(object):
         """add a text file, return the file label"""
         if size < 1:
             raise Exception('bad text file len {0}'.format(size))
+
+        # seems there's a weird fluke in at least model 1036
+        # text files get cut short by a few characters, I've seen up to 4
+        # it varies, seemingly based on which label is used
+        size += 5
+
         label = self._popFileLabel()
         self._allocated_text[label] = '{0}AL{1:04X}FFFF'.format(label, size)
         return label
