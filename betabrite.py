@@ -210,12 +210,12 @@ class _MemConfig(object):
         if dotsformat is None:
             dotsformat = DOTS_8COLOR
         if width < 0 or width > 255 or height < 0 or height > 31:
-            raise Exception('bad smalldots dimensions {0} by {1}'.format(\
+            raise Exception('bad smalldots dimensions {0} by {1}'.format(
                 width, height))
         if dotsformat not in [DOTS_MONO, DOTS_3COLOR, DOTS_8COLOR]:
             raise Exception('bad dots color mode {0}'.format(dotsformat))
         label = self._popFileLabel()
-        self._allocated_image[label] = '{0}DL{1:02X}{2:02X}{3}'.format(\
+        self._allocated_image[label] = '{0}DL{1:02X}{2:02X}{3}'.format(
             label, height, width, dotsformat)
         return label
 
@@ -271,12 +271,12 @@ class Sign(object):
             raise Exception('label is not a file label character')
         if type(msg) != str:
             raise Exception('msg is not a string')
-        if mode is None:
-            mode = MODE_HOLD
         if label == self.MemConfig.LABEL_PRIORITY and len(msg) > 125:
             raise Exception('text too long for priority file')
+        if mode is None:
+            mode = MODE_HOLD
         dat = 'A' + label  # write text
-        if msg and mode:
+        if msg:
             dat = dat + ALPHA_ESC + '0'  # display position, ignored on 213C
             dat = dat + mode + msg
         self._sendPacket(dat)
